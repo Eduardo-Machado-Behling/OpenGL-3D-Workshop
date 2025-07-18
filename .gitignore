@@ -1,0 +1,112 @@
+# CMake build directories
+# Ignore the main build directory
+/build/
+
+# neovim
+.cache
+
+# General build system generated files
+# Object files
+*.o
+*.obj
+
+# Libraries
+*.lib
+*.a
+*.so
+*.so.*
+*.dll
+*.dylib
+
+# Executables
+# Exclude all executables from the 'bin' directory as specified in your structure
+/bin/
+
+# On Linux, executables often don't have extensions, so ignoring them explicitly if not in /bin/
+# This might catch executables outside 'bin' if your build system creates them elsewhere.
+# If all your executables go into 'bin', these can be removed.
+# For cross-platform safety, it's generally better to place all binaries in a dedicated
+# ignored directory like 'bin/'.
+# *~ # Temporary files created by some editors/IDEs
+# *.out
+# *.exe
+# *.app
+
+# Compiler and Linker output
+*.ilk
+*.map
+*.exp
+*.gch # Precompiled headers
+*.pch
+
+# IDE and Editor specific files
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.filters
+*.suo
+*.user
+*.opendb
+*.VC.db
+*.sdf
+*.tlog
+*.log
+*.ncb
+*.aps
+
+# CLion / IntelliJ IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# MacOS specific files
+.DS_Store
+.localized
+.AppleDouble
+
+# Windows specific files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.stackdump
+
+# Package manager files (if any are generated)
+# For example, if you use vcpkg or Conan for dependency management
+# vcpkg is often in 'vcpkg/' or 'buildtrees/', 'packages/', 'installed/'
+# conan is often in '.conan/' or 'build/conan/'
+# Check your setup and add accordingly, e.g.:
+# vcpkg/
+# .conan/
+
+# User-specific configuration files
+# ImGui saves its state in imgui.ini, which typically shouldn't be committed
+/imgui.ini
+
+# Log files
+*.log
+
+# Doxygen/Documentation generation output (if generated into the source tree)
+html/
+latex/
+
+# Python compiled files (if you have Python scripts for build/testing)
+*.pyc
+__pycache__/
+
+# Maven/Gradle build outputs (if any Java/JVM components)
+target/
+build/
+.gradle/
+.project
+.classpath
+.settings/
+
+# Catch-all for common temporary files
+*~
+*.tmp
+*.bak
+*.swp
