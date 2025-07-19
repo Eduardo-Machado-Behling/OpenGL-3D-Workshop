@@ -10,11 +10,45 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # --- Dependencies ---
-add_subdirectory(vendor/glfw)
-add_subdirectory(vendor/glm)
-add_subdirectory(vendor/glad)
-add_subdirectory(vendor/assimp)
+include(FetchContent)
 
+# Optional: set a common prefix for all downloaded sources
+set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/_deps)
+
+# Ensure we build these in Release mode, regardless of main project config
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+### GLFW
+FetchContent_Declare(
+  glfw
+  GIT_REPOSITORY https://github.com/glfw/glfw.git
+  GIT_TAG        3.4
+)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glfw)
+
+### GLM (header-only, no build)
+FetchContent_Declare(
+  glm
+  GIT_REPOSITORY https://github.com/g-truc/glm.git
+  GIT_TAG        1.0.1
+)
+FetchContent_MakeAvailable(glm)
+
+### ASSIMP
+FetchContent_Declare(
+  assimp
+  GIT_REPOSITORY https://github.com/assimp/assimp.git
+  GIT_TAG        v6.0.0
+)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(assimp)
+
+add_subdirectory(vendor/glad)
 file(GLOB IMGUI_SOURCE_ALL
     vendor/imgui/*.cpp
     vendor/imgui/backends/imgui_impl_opengl3.cpp
