@@ -24,6 +24,26 @@ void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id,
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+// Shader Code
+const char *vertexShaderSource = R"(
+#version 330 core
+
+void main(){
+	gl_Position = vec4(0.0, 0.0, 0.5, 1.0);
+	gl_PointSize = 40.0;
+}
+)";
+
+const char *fragmentShaderSource = R"(
+#version 330 core
+
+out vec4 color;
+
+void main(){
+	color = vec4(0.0, 0.0, 0.5, 1.0);
+}
+)";
+
 int main() {
   // --- GLFW and GLAD Initialization ---
   glfwInit();
@@ -55,7 +75,6 @@ int main() {
     return -1;
   }
 
-  // --- Enable Debugging ---
   GLint flags;
   glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
   if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
@@ -66,6 +85,28 @@ int main() {
     glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr,
                           GL_TRUE);
   }
+
+  // --- Buffers (VAO) ---
+  GLuint VAO;
+  glGenVertexArrays(1, &VAO);
+
+  // --- Shader Compilation ---
+  GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+  glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+  glCompileShader(vertexShader);
+
+  GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+  glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+  glCompileShader(fragmentShader);
+
+  GLuint program = glCreateProgram();
+  glAttachShader(program, vertexShader);
+  glAttachShader(program, fragmentShader);
+  glLinkProgram(program);
+
+  // --- Shader Cleanup ---
+  glDeleteShader(vertexShader);
+  glDeleteShader(fragmentShader);
 
   // --- OpenGL Global State ---
   glEnable(GL_DEPTH_TEST);
@@ -101,11 +142,17 @@ int main() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    glUseProgram(program);
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_POINTS, 0, 1);
+
     // --- Swap buffers and poll events ---
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
 
+  glDeleteProgram(program);
+  glDeleteVertexArrays(1, &VAO);
   glfwTerminate();
   return 0;
 }
