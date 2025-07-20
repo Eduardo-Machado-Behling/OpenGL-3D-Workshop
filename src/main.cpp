@@ -1,5 +1,9 @@
 #include <glad/glad.h>
 
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
+
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -26,9 +30,9 @@ float lastFrame = 0.0f;
 
 // Shader Code
 const char *vertexShaderSource = R"(
-#version 330 core
+#version 430 core
 
-in layout (location=0) vec3 color;
+layout (location=0) in vec3 color;
 out vec3 in_color;
 
 void main(){
@@ -48,7 +52,7 @@ void main(){
 )";
 
 const char *fragmentShaderSource = R"(
-#version 330 core
+#version 430 core
 
 in vec3 in_color;
 out vec4 color;
@@ -70,6 +74,8 @@ int main() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
+  float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(
+      glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
   GLFWwindow *window = glfwCreateWindow(
       SCR_WIDTH, SCR_HEIGHT, "OpenGL Instancing Benchmark", NULL, NULL);
   if (window == NULL) {
@@ -82,12 +88,45 @@ int main() {
   // --- Disable V-Sync to unlock FPS ---
   glfwSwapInterval(0);
 
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO &io = ImGui::GetIO();
+  (void)io;
+  io.ConfigFlags |=
+      ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+
+  // Setup Dear ImGui style
+  ImGui::StyleColorsDark();
+  // ImGui::StyleColorsLight();
+
+  // Setup scaling
+  ImGuiStyle &style = ImGui::GetStyle();
+  style.ScaleAllSizes(
+      main_scale); // Bake a fixed style scale. (until we have a solution for
+                   // dynamic style scaling, changing this requires resetting
+                   // Style + calling this again)
+  style.FontScaleDpi =
+      main_scale; // Set initial font scale. (using io.ConfigDpiScaleFonts=true
+                  // makes this unnecessary. We leave both here for
+                  // documentation purpose)
+
   glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
     std::cout << "Failed to initialize GLAD" << std::endl;
     return -1;
   }
+
+  // --- OpenGL Information ---
+  const GLubyte *vendor = glGetString(GL_VENDOR);
+  const GLubyte *renderer = glGetString(GL_RENDERER);
+  const GLubyte *version = glGetString(GL_VERSION);
+  const GLubyte *glslVersion = glGetString(GL_SHADING_LANGUAGE_VERSION);
+
+  std::cout << "OpenGL Vendor: " << vendor << std::endl;
+  std::cout << "OpenGL Renderer: " << renderer << std::endl;
+  std::cout << "OpenGL Version: " << version << std::endl;
+  std::cout << "GLSL Version: " << glslVersion << std::endl;
 
   GLint flags;
   glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
@@ -99,6 +138,10 @@ int main() {
     glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr,
                           GL_TRUE);
   }
+
+  // Setup Platform/Renderer backends
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+  ImGui_ImplOpenGL3_Init("#version 430");
 
   // --- Buffers (VAO) ---
   GLuint VAO;
@@ -129,8 +172,13 @@ int main() {
   // --- Render Loop ---
   int frameCount = 0;
   double previousTime = glfwGetTime();
+
   double totalTime = 0;
   double dir = 1;
+  glm::vec3 gradientStart(0);
+  glm::vec3 gradientEnd(1);
+  float period = 1;
+
   while (!glfwWindowShouldClose(window)) {
     // --- Per-frame time logic ---
     float currentFrame = glfwGetTime();
@@ -154,20 +202,37 @@ int main() {
     processInput(window);
 
     totalTime += dir * deltaTime;
-    float progress = totalTime / 1.f;
+    float progress = totalTime / period;
     if (progress >= 1) {
       progress = 1;
-      totalTime = 1;
+      totalTime = period;
       dir = -1;
     } else if (progress <= 0) {
       dir = 1;
       totalTime = 0;
     }
 
-    const glm::vec3 gradientStart(0);
-    const glm::vec3 gradientEnd(1);
     glm::vec3 color = glm::vec4(
         gradientStart + (gradientEnd - gradientStart) * progress, 1.0);
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    {
+      static float f = 0.0f;
+      static int counter = 0;
+
+      ImGui::Begin("Variables Panel");
+
+      ImGui::ColorEdit3("Start Gradient", (float *)&gradientStart[0]);
+      ImGui::ColorEdit3("End Gradient", (float *)&gradientEnd[0]);
+      ImGui::SliderFloat("Period", &period, 0.0f, 10.0f);
+
+      ImGui::End();
+    }
+
+    ImGui::Render();
 
     // --- Rendering ---
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -179,13 +244,21 @@ int main() {
     glDrawArrays(GL_POINTS, 0, 6);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
     // --- Swap buffers and poll events ---
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
 
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
+
   glDeleteProgram(program);
   glDeleteVertexArrays(1, &VAO);
+
+  glfwDestroyWindow(window);
   glfwTerminate();
   return 0;
 }
