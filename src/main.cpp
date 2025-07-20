@@ -28,19 +28,22 @@ float lastFrame = 0.0f;
 const char *vertexShaderSource = R"(
 #version 330 core
 
+in layout (location=0) vec3 color;
 out vec3 in_color;
 
 void main(){
-	const vec3 points[4] = vec3[4](
-		vec3(-1.0, 0.0, 0.5),
-		vec3(1.0, 0.0, 0.5),
-		vec3(0.0, 1.0, 0.5),
-		vec3(0.0, -1.0, 0.5)
+	const vec3 points[6] = vec3[6](
+		vec3(0.0, 0.5, 1.5),
+		vec3(0.5, 0.0, 0.5),
+		vec3(0.5, 0.5, 0.5),
+		vec3(-0.5, 0.5,0.5),
+		vec3(0.0, 0.0, 0.5),
+		vec3(0.0, 0.5, 0.5)
 	);
 
 	gl_Position = vec4(points[gl_VertexID], 1.0);
-	gl_PointSize = 40.0;
-	in_color = (points[gl_VertexID] + 1.0) * 0.5;
+	gl_PointSize = 20.0;
+	in_color = color;
 }
 )";
 
@@ -126,7 +129,8 @@ int main() {
   // --- Render Loop ---
   int frameCount = 0;
   double previousTime = glfwGetTime();
-
+  double totalTime = 0;
+  double dir = 1;
   while (!glfwWindowShouldClose(window)) {
     // --- Per-frame time logic ---
     float currentFrame = glfwGetTime();
@@ -149,16 +153,31 @@ int main() {
     // --- Input ---
     processInput(window);
 
+    totalTime += dir * deltaTime;
+    float progress = totalTime / 1.f;
+    if (progress >= 1) {
+      progress = 1;
+      totalTime = 1;
+      dir = -1;
+    } else if (progress <= 0) {
+      dir = 1;
+      totalTime = 0;
+    }
+
+    const glm::vec3 gradientStart(0);
+    const glm::vec3 gradientEnd(1);
+    glm::vec3 color = glm::vec4(
+        gradientStart + (gradientEnd - gradientStart) * progress, 1.0);
+
     // --- Rendering ---
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    glVertexAttrib4fv(0, &color[0]);
     glUseProgram(program);
     glBindVertexArray(VAO);
-    glDrawArrays(GL_POINTS, 0, 4);
-
-    glLineWidth(5.0f);
-    glDrawArrays(GL_LINES, 0, 4);
+    glDrawArrays(GL_POINTS, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
     // --- Swap buffers and poll events ---
     glfwSwapBuffers(window);
