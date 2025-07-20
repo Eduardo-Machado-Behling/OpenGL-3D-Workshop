@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <glad/glad.h>
 
 #include <imgui.h>
@@ -11,6 +12,7 @@
 
 #include <iostream>
 #include <string>
+#include <type_traits>
 
 // --- Configuration ---
 const unsigned int SCR_WIDTH = 1280;
@@ -32,20 +34,14 @@ float lastFrame = 0.0f;
 const char *vertexShaderSource = R"(
 #version 430 core
 
-layout (location=0) in vec3 color;
+layout (location=0) in vec3 pos;
+layout (location=1) in vec3 color;
+
 out vec3 in_color;
 
 void main(){
-	const vec3 points[6] = vec3[6](
-		vec3(0.0, 0.5, 1.5),
-		vec3(0.5, 0.0, 0.5),
-		vec3(0.5, 0.5, 0.5),
-		vec3(-0.5, 0.5,0.5),
-		vec3(0.0, 0.0, 0.5),
-		vec3(0.0, 0.5, 0.5)
-	);
 
-	gl_Position = vec4(points[gl_VertexID], 1.0);
+	gl_Position = vec4(pos, 1.0);
 	gl_PointSize = 20.0;
 	in_color = color;
 }
@@ -146,6 +142,36 @@ int main() {
   // --- Buffers (VAO) ---
   GLuint VAO;
   glGenVertexArrays(1, &VAO);
+  glBindVertexArray(VAO);
+
+  struct Vertex {
+    glm::vec3 pos;
+    glm::vec3 color;
+
+    Vertex(glm::vec3 pos, glm::vec3 color) : pos(pos), color(color) {}
+  } vertices[] = {
+      {{0.0, 0.5, 1.5}, {1.0, 0.0, 0.0}},  {{0.5, 0.0, 0.5}, {0.0, 1.0, 0.0}},
+      {{0.5, 0.5, 0.5}, {0.0, 0.0, 1.0}},
+
+      {{-0.5, 0.5, 0.5}, {1.0, 1.0, 0.0}}, {{0.0, 0.0, 0.5}, {1.0, 0.0, 1.0}},
+      {{0.0, 0.5, 0.5}, {0.0, 1.0, 1.0}},
+  };
+
+  GLuint VBO;
+  glGenBuffers(1, &VBO);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices[0],
+               GL_DYNAMIC_DRAW);
+
+  glVertexAttribPointer(
+      0, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
+      (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, pos));
+  glEnableVertexAttribArray(0);
+
+  glVertexAttribPointer(
+      1, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
+      (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, color));
+  glEnableVertexAttribArray(1);
 
   // --- Shader Compilation ---
   GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -173,12 +199,6 @@ int main() {
   int frameCount = 0;
   double previousTime = glfwGetTime();
 
-  double totalTime = 0;
-  double dir = 1;
-  glm::vec3 gradientStart(0);
-  glm::vec3 gradientEnd(1);
-  float period = 1;
-
   while (!glfwWindowShouldClose(window)) {
     // --- Per-frame time logic ---
     float currentFrame = glfwGetTime();
@@ -201,20 +221,6 @@ int main() {
     // --- Input ---
     processInput(window);
 
-    totalTime += dir * deltaTime;
-    float progress = totalTime / period;
-    if (progress >= 1) {
-      progress = 1;
-      totalTime = period;
-      dir = -1;
-    } else if (progress <= 0) {
-      dir = 1;
-      totalTime = 0;
-    }
-
-    glm::vec3 color = glm::vec4(
-        gradientStart + (gradientEnd - gradientStart) * progress, 1.0);
-
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -225,10 +231,38 @@ int main() {
 
       ImGui::Begin("Variables Panel");
 
-      ImGui::ColorEdit3("Start Gradient", (float *)&gradientStart[0]);
-      ImGui::ColorEdit3("End Gradient", (float *)&gradientEnd[0]);
-      ImGui::SliderFloat("Period", &period, 0.0f, 10.0f);
+      const ImGuiTableFlags flags = ImGuiTableFlags_Borders |
+                                    ImGuiTableFlags_RowBg |
+                                    ImGuiTableFlags_Resizable;
+      if (ImGui::BeginTable("vertex_editor", 3, flags)) {
+        ImGui::TableSetupColumn("Vertex #", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Position (X, Y, Z)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
 
+        // 2. Loop through your vertices and create a row for each
+        for (size_t i = 0; i < sizeof(vertices) / sizeof(*vertices);
+             i++) // Replace with your vertex count
+        {
+          ImGui::PushID(i); // Ensure unique widget IDs for each row
+
+          // Column 1: Index
+          ImGui::TableNextColumn();
+          ImGui::Text("%zu", i);
+
+          // Column 2: Position Editor
+          ImGui::TableNextColumn();
+          ImGui::DragFloat3("##pos", &vertices[i].pos[0], 0.005, -1.5f, 1.5f);
+
+          // Column 3: Color Editor
+          ImGui::TableNextColumn();
+          ImGui::ColorEdit3("##color", &vertices[i].color[0]);
+
+          ImGui::PopID(); // Don't forget to pop the ID
+        }
+        ImGui::EndTable();
+      }
       ImGui::End();
     }
 
@@ -238,9 +272,11 @@ int main() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glVertexAttrib4fv(0, &color[0]);
     glUseProgram(program);
     glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
+
     glDrawArrays(GL_POINTS, 0, 6);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
