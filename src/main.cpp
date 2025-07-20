@@ -28,19 +28,30 @@ float lastFrame = 0.0f;
 const char *vertexShaderSource = R"(
 #version 330 core
 
+out vec3 in_color;
+
 void main(){
-	gl_Position = vec4(0.0, 0.0, 0.5, 1.0);
+	const vec3 points[4] = vec3[4](
+		vec3(-1.0, 0.0, 0.5),
+		vec3(1.0, 0.0, 0.5),
+		vec3(0.0, 1.0, 0.5),
+		vec3(0.0, -1.0, 0.5)
+	);
+
+	gl_Position = vec4(points[gl_VertexID], 1.0);
 	gl_PointSize = 40.0;
+	in_color = (points[gl_VertexID] + 1.0) * 0.5;
 }
 )";
 
 const char *fragmentShaderSource = R"(
 #version 330 core
 
+in vec3 in_color;
 out vec4 color;
 
 void main(){
-	color = vec4(0.0, 0.0, 0.5, 1.0);
+	color = vec4(in_color, 1.0);
 }
 )";
 
@@ -144,7 +155,10 @@ int main() {
 
     glUseProgram(program);
     glBindVertexArray(VAO);
-    glDrawArrays(GL_POINTS, 0, 1);
+    glDrawArrays(GL_POINTS, 0, 4);
+
+    glLineWidth(5.0f);
+    glDrawArrays(GL_LINES, 0, 4);
 
     // --- Swap buffers and poll events ---
     glfwSwapBuffers(window);
