@@ -36,34 +36,21 @@ const char *vertexShaderSource = R"(
 
 layout (location=0) in vec3 pos;
 layout (location=1) in vec3 color;
-
-out vec3 in_color;
-out vec3 in_pos;
-
 void main(){
-	gl_Position = vec4(pos, 1.0);
-	gl_PointSize = 20.0;
-	in_color = color;
-	in_pos = pos;
+	gl_Position = vec4(0.0, 0.0, 0.5, 1.0);
+	gl_PointSize = 40.0;
 }
 )";
 
 const char *fragmentShaderSource = R"(
 #version 430 core
 
-in vec3 in_color;
-in vec3 in_pos;
-
 out vec4 color;
 
 uniform float yClip = 1.0;
 
 void main(){
-	if(in_pos.y > yClip){
-		discard;
-	}
-
-	color = vec4(in_color, 1.0);
+	color = vec4(0.0, 0.0, 0.5, 1.0);
 }
 )";
 
@@ -289,14 +276,7 @@ int main() {
 
     glUseProgram(program);
     glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
-
-    glUniform1f(yClipLoc, yClip);
-    glDrawArrays(GL_POINTS, 0, 6);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    glDrawArrays(GL_POINTS, 0, 1);
 
     // --- Swap buffers and poll events ---
     glfwSwapBuffers(window);
