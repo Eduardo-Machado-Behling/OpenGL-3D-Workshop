@@ -53,10 +53,12 @@ void Shader::createShader(const std::filesystem::path &path) {
   std::ifstream sourceCodeFile(path, std::ios::ate);
   size_t size = sourceCodeFile.tellg();
 
-  char *sourceCode = (char *)malloc(size * sizeof(*sourceCode));
+  char *sourceCode = (char *)malloc(size * sizeof(*sourceCode) + 1);
   sourceCodeFile.seekg(0);
   sourceCodeFile.read(sourceCode, size);
+  sourceCode[size] = '\0';
 
+  std::cout << "Source: \n " << sourceCode << "\n\n";
   id = glCreateShader((GLenum)(this->type));
   glShaderSource(id, 1, &sourceCode, NULL);
   glCompileShader(id);

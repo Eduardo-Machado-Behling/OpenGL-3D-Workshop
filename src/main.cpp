@@ -14,7 +14,10 @@
 #include <string>
 #include <type_traits>
 
+#include "glm/ext/matrix_clip_space.hpp"
+#include "glm/ext/matrix_transform.hpp"
 #include "imgui_internal.h"
+
 #include "shader.hpp"
 #include "window.hpp"
 
@@ -79,6 +82,13 @@ int main() {
   Shader::Program program;
 
   program.attachShader("default.vert").attachShader("default.frag").link();
+  glm::vec3 pos(0);
+  glm::vec3 scale(1);
+  glm::vec3 rot(0);
+
+  glm::vec<2, int32_t> x(0, SCR_WIDTH);
+  glm::vec<2, int32_t> y(0, SCR_HEIGHT);
+  glm::vec<2, int32_t> z(-1, 1);
 
   // --- OpenGL Global State ---
   glEnable(GL_DEPTH_TEST);
@@ -87,9 +97,6 @@ int main() {
   // --- Render Loop ---
   int frameCount = 0;
   double previousTime = glfwGetTime();
-
-  GLuint yClipLoc = program.getLocation("yClip");
-  float yClip = 1;
 
   while (!window.shouldClose()) {
     // --- Per-frame time logic ---
@@ -120,8 +127,6 @@ int main() {
       static int counter = 0;
 
       ImGui::Begin("Variables Panel");
-
-      ImGui::DragFloat("yClip", &yClip, 0.005, 0);
 
       const ImGuiTableFlags flags = ImGuiTableFlags_Borders |
                                     ImGuiTableFlags_RowBg |
@@ -156,6 +161,60 @@ int main() {
         ImGui::EndTable();
       }
 
+      if (ImGui::BeginTable("model", 3, flags)) {
+        ImGui::TableSetupColumn("Position (X,Y,Z)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Scale (X, Y, Z)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Rotate (X, Y, Z)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+
+        ImGui::PushID(0); // Ensure unique widget IDs for each row
+
+        // Column 1: Index
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##pos", &pos[0]);
+
+        // Column 2: Position Editor
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##scale", &scale[0]);
+
+        // Column 3: Color Editor
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##rot", &rot[0]);
+
+        ImGui::PopID(); // Don't forget to pop the ID
+      }
+      ImGui::EndTable();
+
+      if (ImGui::BeginTable("view", 3, flags)) {
+        ImGui::TableSetupColumn("Window (Xmin, Xmax)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Window (Ymin, Ymax)",
+                                ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Window (Zmin, Zmax)",
+                                ImGuiTableColumnFlags_WidthFixed);
+
+        ImGui::TableHeadersRow();
+        ImGui::PushID(0); // Ensure unique widget IDs for each row
+                          //
+        // Column 1: Index
+        ImGui::TableNextColumn();
+        ImGui::DragInt2("##x", &x[0]);
+
+        // Column 2: Position Editor
+        ImGui::TableNextColumn();
+        ImGui::DragInt2("##y", &y[0]);
+
+        // Column 3: Color Editor
+        ImGui::TableNextColumn();
+        ImGui::DragInt2("##z", &z[0]);
+
+        ImGui::PopID(); // Don't forget to pop the ID
+      }
+      ImGui::EndTable();
+
       ImGui::End();
     }
 
@@ -170,7 +229,28 @@ int main() {
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
 
-    glUniform1f(yClipLoc, yClip);
+    glm::mat4 proj = glm::ortho((float)x.x, (float)x.y, (float)y.x, (float)y.y,
+                                (float)z.x, (float)z.y);
+    glUniformMatrix4fv(program.getLocation("proj"), 1, GL_FALSE,
+                       glm::value_ptr(proj));
+
+    // --- Build the Model Matrix Correctly ---
+    // 1. Start with the identity matrix
+    glm::mat4 model = glm::mat4(1.0f);
+    // 2. Apply transformations in reverse order: scale, then rotate, then
+    // translate
+    model = glm::translate(model, pos);
+    model =
+        glm::rotate(model, glm::radians(rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    model =
+        glm::rotate(model, glm::radians(rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
+    model =
+        glm::rotate(model, glm::radians(rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::scale(model, scale);
+
+    glUniformMatrix4fv(program.getLocation("model"), 1, GL_FALSE,
+                       glm::value_ptr(model));
+
     glDrawArrays(GL_POINTS, 0, 4);
     glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(*indices),
                    GL_UNSIGNED_INT, NULL);
