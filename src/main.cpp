@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <glad/glad.h>
 
 #include <imgui.h>
@@ -10,9 +11,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <iostream>
 #include <string>
 #include <type_traits>
+
+#include "imgui_internal.h"
+#include "shader.hpp"
+#include "window.hpp"
 
 // --- Configuration ---
 const unsigned int SCR_WIDTH = 1280;
@@ -21,132 +25,16 @@ const unsigned int SCR_HEIGHT = 720;
 // --- Function Prototypes ---
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void processInput(GLFWwindow *window);
-void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id,
-                            GLenum severity, GLsizei length,
-                            const GLchar *message, const void *userParam);
 
 // --- Global Variables ---
 // Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Shader Code
-const char *vertexShaderSource = R"(
-#version 430 core
-
-layout (location=0) in vec3 pos;
-layout (location=1) in vec3 color;
-
-out vec3 in_color;
-out vec3 in_pos;
-
-void main(){
-	gl_Position = vec4(pos, 1.0);
-	gl_PointSize = 20.0;
-	in_color = color;
-	in_pos = pos;
-}
-)";
-
-const char *fragmentShaderSource = R"(
-#version 430 core
-
-in vec3 in_color;
-in vec3 in_pos;
-
-out vec4 color;
-
-uniform float yClip = 1.0;
-
-void main(){
-	if(in_pos.y > yClip){
-		discard;
-	}
-
-	color = vec4(in_color, 1.0);
-}
-)";
-
 int main() {
-  // --- GLFW and GLAD Initialization ---
-  glfwInit();
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+  Window window(SCR_WIDTH, SCR_HEIGHT);
 
-#ifdef __APPLE__
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
-
-  float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(
-      glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
-  GLFWwindow *window = glfwCreateWindow(
-      SCR_WIDTH, SCR_HEIGHT, "OpenGL Instancing Benchmark", NULL, NULL);
-  if (window == NULL) {
-    std::cout << "Failed to create GLFW window" << std::endl;
-    glfwTerminate();
-    return -1;
-  }
-  glfwMakeContextCurrent(window);
-
-  // --- Disable V-Sync to unlock FPS ---
-  glfwSwapInterval(0);
-
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGuiIO &io = ImGui::GetIO();
-  (void)io;
-  io.ConfigFlags |=
-      ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-
-  // Setup Dear ImGui style
-  ImGui::StyleColorsDark();
-  // ImGui::StyleColorsLight();
-
-  // Setup scaling
-  ImGuiStyle &style = ImGui::GetStyle();
-  style.ScaleAllSizes(
-      main_scale); // Bake a fixed style scale. (until we have a solution for
-                   // dynamic style scaling, changing this requires resetting
-                   // Style + calling this again)
-  style.FontScaleDpi =
-      main_scale; // Set initial font scale. (using io.ConfigDpiScaleFonts=true
-                  // makes this unnecessary. We leave both here for
-                  // documentation purpose)
-
-  glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-    std::cout << "Failed to initialize GLAD" << std::endl;
-    return -1;
-  }
-
-  // --- OpenGL Information ---
-  const GLubyte *vendor = glGetString(GL_VENDOR);
-  const GLubyte *renderer = glGetString(GL_RENDERER);
-  const GLubyte *version = glGetString(GL_VERSION);
-  const GLubyte *glslVersion = glGetString(GL_SHADING_LANGUAGE_VERSION);
-
-  std::cout << "OpenGL Vendor: " << vendor << std::endl;
-  std::cout << "OpenGL Renderer: " << renderer << std::endl;
-  std::cout << "OpenGL Version: " << version << std::endl;
-  std::cout << "GLSL Version: " << glslVersion << std::endl;
-
-  GLint flags;
-  glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
-  if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS); // Makes sure errors are displayed
-                                           // synchronously
-    glDebugMessageCallback(glDebugOutput, nullptr);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr,
-                          GL_TRUE);
-  }
-
-  // Setup Platform/Renderer backends
-  ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 430");
+  window.set(glfwSetFramebufferSizeCallback, framebuffer_size_callback);
 
   // --- Buffers (VAO) ---
   GLuint VAO;
@@ -159,12 +47,12 @@ int main() {
 
     Vertex(glm::vec3 pos, glm::vec3 color) : pos(pos), color(color) {}
   } vertices[] = {
-      {{0.0, 0.5, 1.5}, {1.0, 0.0, 0.0}},  {{0.5, 0.0, 0.5}, {0.0, 1.0, 0.0}},
-      {{0.5, 0.5, 0.5}, {0.0, 0.0, 1.0}},
-
-      {{-0.5, 0.5, 0.5}, {1.0, 1.0, 0.0}}, {{0.0, 0.0, 0.5}, {1.0, 0.0, 1.0}},
-      {{0.0, 0.5, 0.5}, {0.0, 1.0, 1.0}},
+      {{0.0, 0.0, 0.5}, {0.0, 1.0, 1.0}},
+      {{0.0, 1.0, 0.5}, {1.0, 0.0, 0.0}},
+      {{1.0, 0.0, 0.5}, {0.0, 1.0, 0.0}},
+      {{1.0, 1.0, 0.5}, {0.0, 0.0, 1.0}},
   };
+  uint32_t indices[] = {0, 1, 2, 1, 2, 3};
 
   GLuint VBO;
   glGenBuffers(1, &VBO);
@@ -182,23 +70,15 @@ int main() {
       (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, color));
   glEnableVertexAttribArray(1);
 
-  // --- Shader Compilation ---
-  GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-  glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-  glCompileShader(vertexShader);
+  GLuint EBO;
+  glGenBuffers(1, &EBO);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), &indices[0],
+               GL_STATIC_DRAW);
 
-  GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-  glCompileShader(fragmentShader);
+  Shader::Program program;
 
-  GLuint program = glCreateProgram();
-  glAttachShader(program, vertexShader);
-  glAttachShader(program, fragmentShader);
-  glLinkProgram(program);
-
-  // --- Shader Cleanup ---
-  glDeleteShader(vertexShader);
-  glDeleteShader(fragmentShader);
+  program.attachShader("default.vert").attachShader("default.frag").link();
 
   // --- OpenGL Global State ---
   glEnable(GL_DEPTH_TEST);
@@ -208,10 +88,10 @@ int main() {
   int frameCount = 0;
   double previousTime = glfwGetTime();
 
-  GLuint yClipLoc = glGetUniformLocation(program, "yClip");
+  GLuint yClipLoc = program.getLocation("yClip");
   float yClip = 1;
 
-  while (!glfwWindowShouldClose(window)) {
+  while (!window.shouldClose()) {
     // --- Per-frame time logic ---
     float currentFrame = glfwGetTime();
     deltaTime = currentFrame - lastFrame;
@@ -224,14 +104,12 @@ int main() {
       std::string title = "OpenGL Window | " + std::to_string(frameCount) +
                           " FPS" + " | " + std::to_string(1000.0 / frameCount) +
                           " ms/frame";
-      glfwSetWindowTitle(window, title.c_str());
+      // glfwSetWindowTitle(window, title.c_str());
+      window.setTitle(title.c_str());
 
       frameCount = 0;
       previousTime = currentFrame;
     }
-
-    // --- Input ---
-    processInput(window);
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -287,121 +165,34 @@ int main() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(program);
+    program.bind();
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
 
     glUniform1f(yClipLoc, yClip);
-    glDrawArrays(GL_POINTS, 0, 6);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_POINTS, 0, 4);
+    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(*indices),
+                   GL_UNSIGNED_INT, NULL);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    // --- Swap buffers and poll events ---
-    glfwSwapBuffers(window);
-    glfwPollEvents();
+    window.swapBuffers();
   }
 
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
 
-  glDeleteProgram(program);
   glDeleteVertexArrays(1, &VAO);
-
-  glfwDestroyWindow(window);
-  glfwTerminate();
   return 0;
 }
 
-void processInput(GLFWwindow *window) {
-  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-    glfwSetWindowShouldClose(window, true);
-}
-
+// void processInput(GLFWwindow *window) {
+//   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+//     glfwSetWindowShouldClose(window, true);
+// }
+//
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
-}
-
-void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id,
-                            GLenum severity, GLsizei length,
-                            const GLchar *message, const void *userParam) {
-  // Ignore non-significant error/warning codes
-  // You can customize this to filter out messages you don't care about
-  if (id == 131169 || id == 131185 || id == 131218 || id == 131204)
-    return;
-
-  std::cout << "---------------" << std::endl;
-  std::cout << "Debug message (" << id << "): " << message << std::endl;
-
-  switch (source) {
-  case GL_DEBUG_SOURCE_API:
-    std::cout << "Source: API";
-    break;
-  case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
-    std::cout << "Source: Window System";
-    break;
-  case GL_DEBUG_SOURCE_SHADER_COMPILER:
-    std::cout << "Source: Shader Compiler";
-    break;
-  case GL_DEBUG_SOURCE_THIRD_PARTY:
-    std::cout << "Source: Third Party";
-    break;
-  case GL_DEBUG_SOURCE_APPLICATION:
-    std::cout << "Source: Application";
-    break;
-  case GL_DEBUG_SOURCE_OTHER:
-    std::cout << "Source: Other";
-    break;
-  }
-  std::cout << std::endl;
-
-  switch (type) {
-  case GL_DEBUG_TYPE_ERROR:
-    std::cout << "Type: Error";
-    break;
-  case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
-    std::cout << "Type: Deprecated Behaviour";
-    break;
-  case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
-    std::cout << "Type: Undefined Behaviour";
-    break;
-  case GL_DEBUG_TYPE_PORTABILITY:
-    std::cout << "Type: Portability";
-    break;
-  case GL_DEBUG_TYPE_PERFORMANCE:
-    std::cout << "Type: Performance";
-    break;
-  case GL_DEBUG_TYPE_MARKER:
-    std::cout << "Type: Marker";
-    break;
-  case GL_DEBUG_TYPE_PUSH_GROUP:
-    std::cout << "Type: Push Group";
-    break;
-  case GL_DEBUG_TYPE_POP_GROUP:
-    std::cout << "Type: Pop Group";
-    break;
-  case GL_DEBUG_TYPE_OTHER:
-    std::cout << "Type: Other";
-    break;
-  }
-  std::cout << std::endl;
-
-  switch (severity) {
-  case GL_DEBUG_SEVERITY_HIGH:
-    std::cout << "Severity: high";
-    break;
-  case GL_DEBUG_SEVERITY_MEDIUM:
-    std::cout << "Severity: medium";
-    break;
-  case GL_DEBUG_SEVERITY_LOW:
-    std::cout << "Severity: low";
-    break;
-  case GL_DEBUG_SEVERITY_NOTIFICATION:
-    std::cout << "Severity: notification";
-    break;
-  }
-  std::cout << std::endl;
-  std::cout << std::endl;
 }
