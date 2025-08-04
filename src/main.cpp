@@ -34,6 +34,8 @@ void processInput(GLFWwindow *window);
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+float aspect = (float)SCR_WIDTH / SCR_HEIGHT;
+
 int main() {
   Window window(SCR_WIDTH, SCR_HEIGHT);
 
@@ -44,18 +46,43 @@ int main() {
   glGenVertexArrays(1, &VAO);
   glBindVertexArray(VAO);
 
+  // --- Cube Vertex Data ---
+  // A cube has 8 unique vertices.
+  // We define a unit cube from (-0.5, -0.5, -0.5) to (0.5, 0.5, 0.5).
   struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
 
     Vertex(glm::vec3 pos, glm::vec3 color) : pos(pos), color(color) {}
   } vertices[] = {
-      {{0.0, 0.0, 0.5}, {0.0, 1.0, 1.0}},
-      {{0.0, 1.0, 0.5}, {1.0, 0.0, 0.0}},
-      {{1.0, 0.0, 0.5}, {0.0, 1.0, 0.0}},
-      {{1.0, 1.0, 0.5}, {0.0, 0.0, 1.0}},
+      // Each vertex has a position and a unique color.
+      // Back face vertices
+      {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}}, // 0: Black
+      {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},  // 1: Red
+      {{0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},   // 2: Yellow
+      {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},  // 3: Green
+      // Front face vertices
+      {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}, // 4: Blue
+      {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}},  // 5: Magenta
+      {{0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},   // 6: White
+      {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}}   // 7: Cyan
   };
-  uint32_t indices[] = {0, 1, 2, 1, 2, 3};
+
+  // A cube has 6 faces, and each face is a quad made of 2 triangles.
+  // This means we need 6 faces * 2 triangles/face * 3 indices/triangle = 36
+  // indices.
+  uint32_t indices[] = {// Back face
+                        0, 1, 2, 2, 3, 0,
+                        // Front face
+                        4, 5, 6, 6, 7, 4,
+                        // Left face
+                        4, 0, 3, 3, 7, 4,
+                        // Right face
+                        1, 5, 6, 6, 2, 1,
+                        // Bottom face
+                        4, 5, 1, 1, 0, 4,
+                        // Top face
+                        3, 2, 6, 6, 7, 3};
 
   GLuint VBO;
   glGenBuffers(1, &VBO);
@@ -82,16 +109,22 @@ int main() {
   Shader::Program program;
 
   program.attachShader("default.vert").attachShader("default.frag").link();
-  glm::vec3 pos(0);
-  glm::vec3 scale(1);
+  glm::vec3 pos(100, 100, -100);
+  glm::vec3 scale(200);
   glm::vec3 rot(0);
 
-  glm::vec<2, int32_t> x(0, SCR_WIDTH);
-  glm::vec<2, int32_t> y(0, SCR_HEIGHT);
-  glm::vec<2, int32_t> z(-1, 1);
+  float fov = 45;
+  glm::vec2 z(1, -1);
 
   // --- OpenGL Global State ---
   glEnable(GL_DEPTH_TEST);
+  glCullFace(GL_BACK);
+  glFrontFace(GL_CCW);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glEnable(GL_STENCIL_TEST);
+  glDepthFunc(GL_LESS);
+  glEnable(GL_MULTISAMPLE);
   glEnable(GL_PROGRAM_POINT_SIZE);
 
   // --- Render Loop ---
@@ -189,10 +222,8 @@ int main() {
       ImGui::EndTable();
 
       if (ImGui::BeginTable("view", 3, flags)) {
-        ImGui::TableSetupColumn("Window (Xmin, Xmax)",
-                                ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Window (Ymin, Ymax)",
-                                ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("fov", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("aspect", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("Window (Zmin, Zmax)",
                                 ImGuiTableColumnFlags_WidthFixed);
 
@@ -201,15 +232,15 @@ int main() {
                           //
         // Column 1: Index
         ImGui::TableNextColumn();
-        ImGui::DragInt2("##x", &x[0]);
+        ImGui::DragFloat("##x", &fov);
 
         // Column 2: Position Editor
         ImGui::TableNextColumn();
-        ImGui::DragInt2("##y", &y[0]);
+        ImGui::DragFloat("##y", &aspect);
 
         // Column 3: Color Editor
         ImGui::TableNextColumn();
-        ImGui::DragInt2("##z", &z[0]);
+        ImGui::DragFloat2("##z", &z[0]);
 
         ImGui::PopID(); // Don't forget to pop the ID
       }
@@ -229,8 +260,7 @@ int main() {
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
 
-    glm::mat4 proj = glm::ortho((float)x.x, (float)x.y, (float)y.x, (float)y.y,
-                                (float)z.x, (float)z.y);
+    glm::mat4 proj = glm::perspective(glm::radians(fov), aspect, z[0], z[1]);
     glUniformMatrix4fv(program.getLocation("proj"), 1, GL_FALSE,
                        glm::value_ptr(proj));
 
@@ -251,7 +281,7 @@ int main() {
     glUniformMatrix4fv(program.getLocation("model"), 1, GL_FALSE,
                        glm::value_ptr(model));
 
-    glDrawArrays(GL_POINTS, 0, 4);
+    glDrawArrays(GL_POINTS, 0, 8);
     glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(*indices),
                    GL_UNSIGNED_INT, NULL);
 
@@ -268,11 +298,7 @@ int main() {
   return 0;
 }
 
-// void processInput(GLFWwindow *window) {
-//   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-//     glfwSetWindowShouldClose(window, true);
-// }
-//
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
+  aspect = (float)width / height;
 }

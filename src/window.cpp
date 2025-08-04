@@ -84,7 +84,7 @@ Window::Window(uint32_t screenWidth, uint32_t screenHeight)
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 430");
 
-  glfwSwapInterval(0);
+  glfwSwapInterval(1);
 }
 
 bool Window::shouldClose() { return glfwWindowShouldClose(window); };
@@ -94,6 +94,11 @@ void Window::swapBuffers() {
 }
 
 void Window::setTitle(const char *title) { glfwSetWindowTitle(window, title); }
+glm::vec2 Window::getSize() {
+  glm::vec<2, int> size;
+  glfwGetWindowSize(window, &size.x, &size.y);
+  return size;
+}
 
 void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id,
                             GLenum severity, GLsizei length,

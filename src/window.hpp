@@ -1,8 +1,8 @@
 #ifndef WINDOW_HPP
 #define WINDOW_HPP
 
-#include <functional>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -30,6 +30,7 @@ public:
   bool shouldClose();
   void swapBuffers();
   void setTitle(const char *title);
+  glm::vec2 getSize();
 
   template <typename Func, typename... Args> void set(Func func, Args... args) {
     func(window, args...);
