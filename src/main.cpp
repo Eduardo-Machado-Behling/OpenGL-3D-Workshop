@@ -1,5 +1,7 @@
+#include "mesh.hpp"
+#include "model.hpp"
 #include <cstddef>
-#include <cstdint>
+#include <filesystem>
 #include <glad/glad.h>
 
 #include <imgui.h>
@@ -11,15 +13,24 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/io.hpp>
+
+#include <iostream>
 #include <string>
 #include <type_traits>
 
-#include "glm/ext/matrix_clip_space.hpp"
+#include "camera.hpp"
 #include "glm/ext/matrix_transform.hpp"
 #include "imgui_internal.h"
 
 #include "shader.hpp"
 #include "window.hpp"
+
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <vector>
 
 // --- Configuration ---
 const unsigned int SCR_WIDTH = 1280;
@@ -27,94 +38,41 @@ const unsigned int SCR_HEIGHT = 720;
 
 // --- Function Prototypes ---
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
-void processInput(GLFWwindow *window);
+void key_callback(GLFWwindow *window, int key, int scancode, int action,
+                  int mods);
+void mouse_callback(GLFWwindow *window, double xpos, double ypos);
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 
 // --- Global Variables ---
 // Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+float fov = 45;
+bool captureMouse = false;
 
 float aspect = (float)SCR_WIDTH / SCR_HEIGHT;
+
+CameraPerpective camera;
+bool keys[1024] = {false};
 
 int main() {
   Window window(SCR_WIDTH, SCR_HEIGHT);
 
   window.set(glfwSetFramebufferSizeCallback, framebuffer_size_callback);
+  window.set(glfwSetKeyCallback, key_callback);
+  // window.set(glfwSetCursorPosCallback, mouse_callback);
+  // window.set(glfwSetScrollCallback, scroll_callback);
 
-  // --- Buffers (VAO) ---
-  GLuint VAO;
-  glGenVertexArrays(1, &VAO);
-  glBindVertexArray(VAO);
-
-  // --- Cube Vertex Data ---
-  // A cube has 8 unique vertices.
-  // We define a unit cube from (-0.5, -0.5, -0.5) to (0.5, 0.5, 0.5).
-  struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-
-    Vertex(glm::vec3 pos, glm::vec3 color) : pos(pos), color(color) {}
-  } vertices[] = {
-      // Each vertex has a position and a unique color.
-      // Back face vertices
-      {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}}, // 0: Black
-      {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},  // 1: Red
-      {{0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},   // 2: Yellow
-      {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},  // 3: Green
-      // Front face vertices
-      {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}, // 4: Blue
-      {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}},  // 5: Magenta
-      {{0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},   // 6: White
-      {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}}   // 7: Cyan
-  };
-
-  // A cube has 6 faces, and each face is a quad made of 2 triangles.
-  // This means we need 6 faces * 2 triangles/face * 3 indices/triangle = 36
-  // indices.
-  uint32_t indices[] = {// Back face
-                        0, 1, 2, 2, 3, 0,
-                        // Front face
-                        4, 5, 6, 6, 7, 4,
-                        // Left face
-                        4, 0, 3, 3, 7, 4,
-                        // Right face
-                        1, 5, 6, 6, 2, 1,
-                        // Bottom face
-                        4, 5, 1, 1, 0, 4,
-                        // Top face
-                        3, 2, 6, 6, 7, 3};
-
-  GLuint VBO;
-  glGenBuffers(1, &VBO);
-  glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices[0],
-               GL_DYNAMIC_DRAW);
-
-  glVertexAttribPointer(
-      0, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
-      (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, pos));
-  glEnableVertexAttribArray(0);
-
-  glVertexAttribPointer(
-      1, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
-      (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, color));
-  glEnableVertexAttribArray(1);
-
-  GLuint EBO;
-  glGenBuffers(1, &EBO);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), &indices[0],
-               GL_STATIC_DRAW);
-
+  Model modell = Model::Load("./bin/assets/models/space craft.blend");
   Shader::Program program;
+  Model ground = Model::Load("./bin/assets/models/01_Model_2_20w__.obj");
 
   program.attachShader("default.vert").attachShader("default.frag").link();
-  glm::vec3 pos(100, 100, -100);
-  glm::vec3 scale(200);
-  glm::vec3 rot(0);
+  glm::vec3 pos(100, 100, 0);
+  glm::vec3 scale(0.1);
+  glm::vec3 rot(-90, 0, 0);
 
-  float fov = 45;
-  glm::vec2 z(1, -1);
+  glm::vec2 z(0.1, 1'000);
 
   // --- OpenGL Global State ---
   glEnable(GL_DEPTH_TEST);
@@ -130,6 +88,13 @@ int main() {
   // --- Render Loop ---
   int frameCount = 0;
   double previousTime = glfwGetTime();
+  float vel = 100;
+
+  glm::vec3 _pos = glm::vec3(0, -50, 0);
+  glm::vec3 _scale = glm::vec3(100, 100, 1);
+  glm::vec3 _rot = glm::vec3(-90, 0, 0);
+
+  camera.pos(camera.pos() + glm::vec3(0, -23.621, 0));
 
   while (!window.shouldClose()) {
     // --- Per-frame time logic ---
@@ -151,6 +116,27 @@ int main() {
       previousTime = currentFrame;
     }
 
+    glm::vec3 velocity(0.0f);
+    if (keys[GLFW_KEY_W])
+      velocity -= camera.front();
+    if (keys[GLFW_KEY_S])
+      velocity += camera.front();
+    if (keys[GLFW_KEY_A])
+      velocity += glm::normalize(glm::cross(camera.front(), camera.up()));
+    if (keys[GLFW_KEY_D])
+      velocity -= glm::normalize(glm::cross(camera.front(), camera.up()));
+    if (keys[GLFW_KEY_SPACE])
+      velocity += camera.up();
+    if (keys[GLFW_KEY_LEFT_CONTROL])
+      velocity -= camera.up();
+
+    glm::vec3 newPos = camera.pos() + velocity * deltaTime * vel;
+    newPos.y = newPos.y < -25 ? -25 : newPos.y;
+    camera.pos(newPos);
+
+    pos = camera.pos() + (glm::vec3(0, -1, 1) * 20.f * scale.x);
+
+    camera.lookAt(pos);
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -164,35 +150,37 @@ int main() {
       const ImGuiTableFlags flags = ImGuiTableFlags_Borders |
                                     ImGuiTableFlags_RowBg |
                                     ImGuiTableFlags_Resizable;
-      if (ImGui::BeginTable("vertex_editor", 3, flags)) {
-        ImGui::TableSetupColumn("Vertex #", ImGuiTableColumnFlags_WidthFixed);
-        ImGui::TableSetupColumn("Position (X, Y, Z)",
+
+      if (ImGui::BeginTable("camera", 4, flags)) {
+        ImGui::TableSetupColumn("Position (X,Y,Z)",
                                 ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Up (X, Y, Z)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Front (X, Y, Z)",
+                                ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Vel", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
 
-        // 2. Loop through your vertices and create a row for each
-        for (size_t i = 0; i < sizeof(vertices) / sizeof(*vertices);
-             i++) // Replace with your vertex count
-        {
-          ImGui::PushID(i); // Ensure unique widget IDs for each row
+        ImGui::PushID(0); // Ensure unique widget IDs for each row
 
-          // Column 1: Index
-          ImGui::TableNextColumn();
-          ImGui::Text("%zu", i);
+        // Column 1: Index
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##pos", &camera.pos()[0]);
 
-          // Column 2: Position Editor
-          ImGui::TableNextColumn();
-          ImGui::DragFloat3("##pos", &vertices[i].pos[0], 0.005, -1.5f, 1.5f);
+        // Column 2: Position Editor
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##scale", &camera.up()[0]);
 
-          // Column 3: Color Editor
-          ImGui::TableNextColumn();
-          ImGui::ColorEdit3("##color", &vertices[i].color[0]);
+        // Column 3: Color Editor
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##rot", &camera.front()[0]);
 
-          ImGui::PopID(); // Don't forget to pop the ID
-        }
-        ImGui::EndTable();
+        ImGui::TableNextColumn();
+        ImGui::DragFloat("##vel", &vel);
+
+        ImGui::PopID(); // Don't forget to pop the ID
       }
+      ImGui::EndTable();
 
       if (ImGui::BeginTable("model", 3, flags)) {
         ImGui::TableSetupColumn("Position (X,Y,Z)",
@@ -216,6 +204,22 @@ int main() {
         // Column 3: Color Editor
         ImGui::TableNextColumn();
         ImGui::DragFloat3("##rot", &rot[0]);
+
+        ImGui::PopID();   // Don't forget to pop the ID
+                          //
+        ImGui::PushID(1); // Ensure unique widget IDs for each row
+
+        // Column 1: Index
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##pos", &_pos[0]);
+
+        // Column 2: Position Editor
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##scale", &_scale[0]);
+
+        // Column 3: Color Editor
+        ImGui::TableNextColumn();
+        ImGui::DragFloat3("##rot", &_rot[0]);
 
         ImGui::PopID(); // Don't forget to pop the ID
       }
@@ -256,13 +260,14 @@ int main() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     program.bind();
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
-
-    glm::mat4 proj = glm::perspective(glm::radians(fov), aspect, z[0], z[1]);
+    camera.setProj(fov, aspect, z[0], z[1]);
+    glm::mat4 proj = camera.getProj();
     glUniformMatrix4fv(program.getLocation("proj"), 1, GL_FALSE,
                        glm::value_ptr(proj));
+
+    glm::mat4 view = camera.getView();
+    glUniformMatrix4fv(program.getLocation("view"), 1, GL_FALSE,
+                       glm::value_ptr(view));
 
     // --- Build the Model Matrix Correctly ---
     // 1. Start with the identity matrix
@@ -281,9 +286,24 @@ int main() {
     glUniformMatrix4fv(program.getLocation("model"), 1, GL_FALSE,
                        glm::value_ptr(model));
 
-    glDrawArrays(GL_POINTS, 0, 8);
-    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(*indices),
-                   GL_UNSIGNED_INT, NULL);
+    glUniform1i(program.getLocation("type"), 0);
+    modell.Draw(program);
+
+    model = glm::mat4(1);
+    model = glm::translate(model, _pos);
+
+    model =
+        glm::rotate(model, glm::radians(_rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    model =
+        glm::rotate(model, glm::radians(_rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
+    model =
+        glm::rotate(model, glm::radians(_rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::scale(model, _scale);
+    glUniformMatrix4fv(program.getLocation("model"), 1, GL_FALSE,
+                       glm::value_ptr(model));
+
+    glUniform1i(program.getLocation("type"), 0);
+    ground.Draw(program);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -294,11 +314,75 @@ int main() {
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
 
-  glDeleteVertexArrays(1, &VAO);
   return 0;
 }
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
   aspect = (float)width / height;
+}
+
+// In your key callback:
+void key_callback(GLFWwindow *window, int key, int scancode, int action,
+                  int mods) {
+  ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+  if (key >= 0 && key < 1024) {
+    if (action == GLFW_PRESS)
+      keys[key] = true;
+    else if (action == GLFW_RELEASE)
+      keys[key] = false;
+  }
+}
+
+void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
+  return;
+  static float lastX = 400, lastY = 300;
+  static bool firstMouse = true;
+  ImGui_ImplGlfw_CursorPosCallback(window, xpos, ypos);
+  if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) != GLFW_RELEASE) {
+    firstMouse = true;
+    return;
+  }
+
+  if (firstMouse) {
+    lastX = xpos;
+    lastY = ypos;
+    firstMouse = false;
+  }
+
+  float xoffset = xpos - lastX;
+  float yoffset = lastY - ypos; // reversed since y-coordinates go bottom to top
+  lastX = xpos;
+  lastY = ypos;
+
+  float sensitivity = 0.1f;
+  xoffset *= sensitivity;
+  yoffset *= sensitivity;
+
+  glm::vec2 rot = camera.rot();
+  rot.x += xoffset;
+  rot.y += yoffset;
+
+  // Clamp pitch
+  if (rot.y > 89.0f)
+    rot.y = 89.0f;
+  if (rot.y < -89.0f)
+    rot.y = -89.0f;
+
+  camera.rot(rot);
+
+  glm::vec3 direction;
+  direction.x = cos(glm::radians(rot.x)) * cos(glm::radians(rot.y));
+  direction.y = sin(glm::radians(rot.y));
+  direction.z = sin(glm::radians(rot.x)) * cos(glm::radians(rot.y));
+  camera.front(glm::normalize(direction));
+}
+
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
+  ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+  fov -= (float)yoffset;
+  if (fov < 1.0f)
+    fov = 1.0f;
+  if (fov > 45.0f)
+    fov = 45.0f;
 }

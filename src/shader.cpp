@@ -6,7 +6,6 @@
 #include <stdexcept>
 
 namespace Shader {
-
 // Hack way, better way would be provide argv[0];
 const std::filesystem::path Shader::ROOT = []() {
   std::filesystem::path cwd = std::filesystem::current_path();
@@ -58,8 +57,7 @@ void Shader::createShader(const std::filesystem::path &path) {
   sourceCodeFile.read(sourceCode, size);
   sourceCode[size] = '\0';
 
-  std::cout << "Source: \n " << sourceCode << "\n\n";
-  id = glCreateShader((GLenum)(this->type));
+  id = glCreateShader(GL_SHADER_TYPES.at(this->type));
   glShaderSource(id, 1, &sourceCode, NULL);
   glCompileShader(id);
 
@@ -122,8 +120,9 @@ Program &Program::link() {
       char *info = (char *)malloc(logLength);
       glGetProgramInfoLog(id, logLength, NULL, info);
       std::cerr << "ERROR::PROGRAM::LINKING_FAILED\n" << info << std::endl;
-      throw new std::runtime_error("Program linking error! ");
+      free(info);
     }
+    throw new std::runtime_error("Program linking error! ");
   }
   return *this;
 }

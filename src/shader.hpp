@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 namespace Shader {
+
 class Shader {
 public:
   enum class ShaderType {
@@ -37,6 +38,14 @@ private:
   GLuint id;
   ShaderType type;
   std::filesystem::path path;
+};
+
+const std::unordered_map<Shader::ShaderType, GLenum> GL_SHADER_TYPES = {
+    {Shader::ShaderType::VERTEX, GL_VERTEX_SHADER},
+    {Shader::ShaderType::FRAGMENT, GL_FRAGMENT_SHADER},
+    {Shader::ShaderType::GEOMETRY, GL_GEOMETRY_SHADER},
+    {Shader::ShaderType::TCC, GL_TESS_CONTROL_SHADER},
+    {Shader::ShaderType::TCE, GL_TESS_EVALUATION_SHADER},
 };
 
 class Program {

@@ -4,6 +4,7 @@ out vec4 FragColor;
 
 uniform vec3 planeColor;
 
+
 void main()
 {
     // Use the uniform for the final color, with full alpha
