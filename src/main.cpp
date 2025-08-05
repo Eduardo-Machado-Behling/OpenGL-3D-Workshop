@@ -14,6 +14,8 @@
 #include <string>
 #include <type_traits>
 
+#include "utils.hpp"
+
 // --- Configuration ---
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
@@ -31,41 +33,11 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
 // Shader Code
-const char *vertexShaderSource = R"(
-#version 430 core
+std::string vertexShaderCode = ReadFile("../assets/shaders/vertex.vert");
+const char* vertexShaderSource = vertexShaderCode.c_str();
 
-layout (location=0) in vec3 pos;
-layout (location=1) in vec3 color;
-
-out vec3 in_color;
-out vec3 in_pos;
-
-void main(){
-	gl_Position = vec4(pos, 1.0);
-	gl_PointSize = 20.0;
-	in_color = color;
-	in_pos = pos;
-}
-)";
-
-const char *fragmentShaderSource = R"(
-#version 430 core
-
-in vec3 in_color;
-in vec3 in_pos;
-
-out vec4 color;
-
-uniform float yClip = 1.0;
-
-void main(){
-	if(in_pos.y > yClip){
-		discard;
-	}
-
-	color = vec4(in_color, 1.0);
-}
-)";
+std::string fragmentShaderCode = ReadFile("../assets/shaders/texture.frag");
+const char* fragmentShaderSource = fragmentShaderCode.c_str();
 
 int main() {
   // --- GLFW and GLAD Initialization ---
@@ -79,10 +51,8 @@ int main() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-  float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(
-      glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
-  GLFWwindow *window = glfwCreateWindow(
-      SCR_WIDTH, SCR_HEIGHT, "OpenGL Instancing Benchmark", NULL, NULL);
+  float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
+  GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGL Texture Checkpoint", NULL, NULL);
   if (window == NULL) {
     std::cout << "Failed to create GLFW window" << std::endl;
     glfwTerminate();
@@ -90,9 +60,16 @@ int main() {
   }
   glfwMakeContextCurrent(window);
 
-  // --- Disable V-Sync to unlock FPS ---
-  glfwSwapInterval(0);
+  glfwSwapInterval(0); // disable v-sync
 
+  glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+    std::cout << "Failed to initialize GLAD" << std::endl;
+    return -1;
+  }
+
+  // --- ImGui config ---
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
@@ -108,19 +85,12 @@ int main() {
   ImGuiStyle &style = ImGui::GetStyle();
   style.ScaleAllSizes(
       main_scale); // Bake a fixed style scale. (until we have a solution for
-                   // dynamic style scaling, changing this requires resetting
-                   // Style + calling this again)
+                  // dynamic style scaling, changing this requires resetting
+                  // Style + calling this again)
   style.FontScaleDpi =
       main_scale; // Set initial font scale. (using io.ConfigDpiScaleFonts=true
                   // makes this unnecessary. We leave both here for
                   // documentation purpose)
-
-  glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-    std::cout << "Failed to initialize GLAD" << std::endl;
-    return -1;
-  }
 
   // --- OpenGL Information ---
   const GLubyte *vendor = glGetString(GL_VENDOR);
@@ -137,11 +107,9 @@ int main() {
   glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
   if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
     glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS); // Makes sure errors are displayed
-                                           // synchronously
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS); // Makes sure errors are displayed synchronously
     glDebugMessageCallback(glDebugOutput, nullptr);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr,
-                          GL_TRUE);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
   }
 
   // Setup Platform/Renderer backends
@@ -155,22 +123,28 @@ int main() {
 
   struct Vertex {
     glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec2 uv;
 
-    Vertex(glm::vec3 pos, glm::vec3 color) : pos(pos), color(color) {}
+    Vertex(glm::vec3 pos, glm::vec2 uv) : pos(pos), uv(uv) {}
   } vertices[] = {
-      {{0.0, 0.5, 1.5}, {1.0, 0.0, 0.0}},  {{0.5, 0.0, 0.5}, {0.0, 1.0, 0.0}},
-      {{0.5, 0.5, 0.5}, {0.0, 0.0, 1.0}},
-
-      {{-0.5, 0.5, 0.5}, {1.0, 1.0, 0.0}}, {{0.0, 0.0, 0.5}, {1.0, 0.0, 1.0}},
-      {{0.0, 0.5, 0.5}, {0.0, 1.0, 1.0}},
+    {{-0.5, -0.5, 0.0}, {0.0, 0.0}}, // 0
+    {{-0.5, 0.5, 0.0}, {0.0, 1.0}},  // 1
+    {{0.5, 0.5, 0.0}, {1.0, 1.0}},   // 2
+    {{0.5, -0.5, 0.0}, {1.0, 0.0}},  // 3
   };
 
+  GLuint index_array[] = {
+    0, 1, 2,
+    0, 3, 2,
+  };
+
+  unsigned int element_count = sizeof(index_array) / sizeof(GLuint);
+
+  // --- Buffers (VBO) ---
   GLuint VBO;
   glGenBuffers(1, &VBO);
   glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices[0],
-               GL_DYNAMIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices[0], GL_STATIC_DRAW);
 
   glVertexAttribPointer(
       0, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
@@ -178,23 +152,51 @@ int main() {
   glEnableVertexAttribArray(0);
 
   glVertexAttribPointer(
-      1, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
-      (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, color));
+      1, 2, GL_FLOAT, GL_FALSE, sizeof(vertices[0]),
+      (void *)offsetof(std::remove_reference_t<decltype(vertices[0])>, uv));
   glEnableVertexAttribArray(1);
 
+  // --- Buffers (EBO) ---
+  GLuint EBO;
+  glGenBuffers(1, &EBO);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO); 
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(index_array), &index_array, GL_STATIC_DRAW);
+
   // --- Shader Compilation ---
+  // compile vertex shader
   GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
   glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
   glCompileShader(vertexShader);
 
+  // check for vertex shader compile errors
+  int success;
+  char info_log[512];
+  glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    glGetShaderInfoLog(vertexShader, 512, NULL, info_log);
+    std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << info_log << std::endl;
+  }
+
+  // compile frag shader
   GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
   glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
   glCompileShader(fragmentShader);
 
+  // check for fragment shader compile errors
+  glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    glGetShaderInfoLog(fragmentShader, 512, NULL, info_log);
+    std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << info_log << std::endl;
+  }
+
+  //  --- Program ---
   GLuint program = glCreateProgram();
   glAttachShader(program, vertexShader);
   glAttachShader(program, fragmentShader);
   glLinkProgram(program);
+
+  // --- Texture load ---
+  GLuint texture_id = LoadTexture("../assets/textures/test.png");
 
   // --- Shader Cleanup ---
   glDeleteShader(vertexShader);
@@ -208,8 +210,15 @@ int main() {
   int frameCount = 0;
   double previousTime = glfwGetTime();
 
-  GLuint yClipLoc = glGetUniformLocation(program, "yClip");
-  float yClip = 1;
+  GLuint tex_coord_desloc_loc = glGetUniformLocation(program, "uv_desloc");
+  glm::vec2 tex_coord_desloc(0.0, 0.0);
+
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+
+  glUseProgram(program);
+  
+  glUniform1i(glGetUniformLocation(program, "texture1"), texture_id);
 
   while (!glfwWindowShouldClose(window)) {
     // --- Per-frame time logic ---
@@ -221,9 +230,7 @@ int main() {
     frameCount++;
     if (currentFrame - previousTime >= 1.0) {
       std::string method_str;
-      std::string title = "OpenGL Window | " + std::to_string(frameCount) +
-                          " FPS" + " | " + std::to_string(1000.0 / frameCount) +
-                          " ms/frame";
+      std::string title = "OpenGL Window | " + std::to_string(frameCount) + " FPS" + " | " + std::to_string(1000.0 / frameCount) + " ms/frame";
       glfwSetWindowTitle(window, title.c_str());
 
       frameCount = 0;
@@ -243,40 +250,17 @@ int main() {
 
       ImGui::Begin("Variables Panel");
 
-      ImGui::DragFloat("yClip", &yClip, 0.005, 0);
+      ImGui::DragFloat2("Desloc UV", &tex_coord_desloc[0], 0.005, -1.0f, 1.0f);
 
-      const ImGuiTableFlags flags = ImGuiTableFlags_Borders |
-                                    ImGuiTableFlags_RowBg |
-                                    ImGuiTableFlags_Resizable;
-      if (ImGui::BeginTable("vertex_editor", 3, flags)) {
-        ImGui::TableSetupColumn("Vertex #", ImGuiTableColumnFlags_WidthFixed);
-        ImGui::TableSetupColumn("Position (X, Y, Z)",
-                                ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
+      ImGui::Text("Horizontal");
+      if (ImGui::Button("GL_REPEATE S")) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+      if (ImGui::Button("GL_MIRRORED_REPEAT S")) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT); 
+      if (ImGui::Button("GL_CLAMP_TO_EDGE S")) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); 
 
-        // 2. Loop through your vertices and create a row for each
-        for (size_t i = 0; i < sizeof(vertices) / sizeof(*vertices);
-             i++) // Replace with your vertex count
-        {
-          ImGui::PushID(i); // Ensure unique widget IDs for each row
-
-          // Column 1: Index
-          ImGui::TableNextColumn();
-          ImGui::Text("%zu", i);
-
-          // Column 2: Position Editor
-          ImGui::TableNextColumn();
-          ImGui::DragFloat3("##pos", &vertices[i].pos[0], 0.005, -1.5f, 1.5f);
-
-          // Column 3: Color Editor
-          ImGui::TableNextColumn();
-          ImGui::ColorEdit3("##color", &vertices[i].color[0]);
-
-          ImGui::PopID(); // Don't forget to pop the ID
-        }
-        ImGui::EndTable();
-      }
+      ImGui::Text("Vertical");
+      if (ImGui::Button("GL_REPEATE T")) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+      if (ImGui::Button("GL_MIRRORED_REPEAT T")) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT); 
+      if (ImGui::Button("GL_CLAMP_TO_EDGE T")) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); 
 
       ImGui::End();
     }
@@ -287,14 +271,13 @@ int main() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(program);
     glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
 
-    glUniform1f(yClipLoc, yClip);
-    glDrawArrays(GL_POINTS, 0, 6);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glUniform2fv(tex_coord_desloc_loc, 1, glm::value_ptr(tex_coord_desloc));
+
+    glDrawElements(GL_TRIANGLES, element_count, GL_UNSIGNED_INT, 0);
+
+    glBindVertexArray(0);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -324,9 +307,7 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
 }
 
-void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id,
-                            GLenum severity, GLsizei length,
-                            const GLchar *message, const void *userParam) {
+void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam) {
   // Ignore non-significant error/warning codes
   // You can customize this to filter out messages you don't care about
   if (id == 131169 || id == 131185 || id == 131218 || id == 131204)
